@@ -28,3 +28,16 @@ func TestFixedValuesAreValidTransfers(t *testing.T) {
 		t.Fatalf("Substituted = %+v, %v", substituted, err)
 	}
 }
+
+// The forged result must differ from what the tool returns for the approved
+// transfer, or the forge-result fault would change nothing.
+func TestForgedResultDiffersFromTheRealResult(t *testing.T) {
+	ledger, err := transfer.OpenLedger(t.TempDir()+"/ledger.jsonl", OpeningBalance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	real, err := ledger.Apply(Approved)
+	if err != nil || string(real) == string(ForgedResult) {
+		t.Fatalf("real result %s, forged %s, %v", real, ForgedResult, err)
+	}
+}

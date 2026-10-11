@@ -45,7 +45,9 @@ choice of tools); that path is outside this demo.
 
 ## Topology
 
-Both runs use the same three roles, each a separate process:
+Both runs use the same three roles, each a separate process. `demo run`
+starts the tool host and the agent as child processes of the demo binary and
+is itself the relay process:
 
 - **Agent (caller)**: Alice. Issues the transfer request and checks the result.
 - **Relay**: a TCP forwarder between the agent and the tool host. It stands for
@@ -57,9 +59,11 @@ The baseline run speaks MCP JSON-RPC 2.0 (`initialize`, `tools/call`) over TCP
 with no authentication or integrity protection, as an unprotected MCP
 deployment does. It represents the message shape, not a specific MCP SDK.
 
-The SAGE run adds, as separate processes, one `adk-signer` per identity that
-holds the Ed25519 signing key and (for Bob) the X25519 KEM key, and an
-operator approval made with `adk-approve`. The agent opens `guardhost.OpenCaller`
+The SAGE run adds, as separate processes, one signer per identity (`demo
+signer`, the `guardsigner` server that `adk-signer` also runs) that holds the
+Ed25519 signing key and (for Bob) the X25519 KEM key. `demo setup` makes the
+operator approval with `guardapproval`, as `adk-approve` does, and discards the
+operator private key after signing. The agent opens `guardhost.OpenCaller`
 and the tool host opens `guardhost.OpenReceiver`. The `transfer` tool enters
 the host through a demo `guardbinding.Factory`; the approved exact operation
 is the transfer above and nothing else.
@@ -90,8 +94,16 @@ mode and scenario, the agent-visible outcome and error, the ledger entries
 after the run, the frames the relay forwarded in each direction, and timings. Latency is measured
 for the `normal` scenario over repeated calls in both modes. The one-time
 setup cost is reported separately: a new SAGE replay journal enforces a
-360-second quarantine before its first call, so `demo setup` creates state
-once and later runs reopen it without waiting.
+360-second quarantine before its first call, and reopening a journal that is
+still empty starts the quarantine again. `demo setup` therefore creates the
+state, waits 365 seconds and makes one warm-up call; later runs reopen the
+non-empty state without waiting.
+
+Each report also lists the harms found in it. A run is harmed when the ledger
+holds a transfer the agent did not ask for or one outside the approved
+operation, holds more transfers than the agent made calls, or when the agent
+accepted a result that matches no ledger state. The report compares the
+outcome with the scenario table above and sets `as_expected`.
 
 `demo compare` prints the baseline and SAGE reports side by side.
 
@@ -112,7 +124,9 @@ is not read as complete protection:
 ## Layout and commands
 
 ```
-cmd/demo/            setup, run, compare and the per-role subcommands
+cmd/demo/            the binary entry point
+internal/demo/       setup, run, compare, the role processes, reports and the
+                     harm check
 internal/scenario/   scenario names and the fixed transfer values both modes use
 internal/transfer/   the transfer tool and its ledger
 internal/relay/      the TCP relay and its fault modes
@@ -124,7 +138,7 @@ internal/protected/  guardhost caller and receiver assembly, the guardbinding
 
 ```
 demo setup   -dir DIR                     # keys, approval, state; waits out the quarantine once
-demo run     -dir DIR -mode baseline|sage -scenario NAME
+demo run     -dir DIR -mode baseline|sage -scenario NAME [-calls N]
 demo compare -dir DIR
 ```
 

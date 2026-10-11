@@ -7,11 +7,13 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"io"
 	"net"
+	"slices"
 	"sync"
 	"time"
 )
@@ -98,9 +100,17 @@ func WriteFrame(w io.Writer, frame []byte) error {
 	return err
 }
 
-// Record holds the frames one connection carried after the fault was applied.
+// Record holds the frames one connection carried after the fault was
+// applied, and the frames the fault changed.
 type Record struct {
 	Requests, Responses [][]byte
+	Changed             []Change
+}
+
+// Change names one frame the fault changed.
+type Change struct {
+	Direction Direction
+	Index     int
 }
 
 // Relay accepts agent connections and forwards each to the target.
@@ -167,7 +177,7 @@ func (r *Relay) Records() []Record {
 	defer r.mu.Unlock()
 	out := make([]Record, len(r.records))
 	for i, rec := range r.records {
-		out[i] = Record{Requests: clone(rec.Requests), Responses: clone(rec.Responses)}
+		out[i] = Record{Requests: clone(rec.Requests), Responses: clone(rec.Responses), Changed: slices.Clone(rec.Changed)}
 	}
 	return out
 }
@@ -199,6 +209,9 @@ func (r *Relay) pump(index int, dir Direction, src, dst net.Conn, rec *Record) {
 		}
 		out := r.fault.Frame(index, dir, i, frame)
 		r.mu.Lock()
+		if !bytes.Equal(out, frame) {
+			rec.Changed = append(rec.Changed, Change{Direction: dir, Index: i})
+		}
 		if dir == Request {
 			rec.Requests = append(rec.Requests, append([]byte(nil), out...))
 		} else {
