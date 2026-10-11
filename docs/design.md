@@ -70,22 +70,24 @@ is the transfer above and nothing else.
 | --- | --- | --- | --- |
 | `normal` | None. | One transfer, result accepted. | Same. |
 | `tamper-args` | The relay changes the recipient and amount in the agent's request. | The tool executes the changed transfer. | The receiver refuses the changed bytes before any effect; the ledger stays empty. |
-| `replay` | The relay records a completed request and resends it on a new connection. | The tool executes the transfer a second time. | The receiver's replay journal and admission ledger refuse the second attempt; one transfer only. |
+| `replay` | The relay records a completed request and resends it on a new connection. | The tool executes the transfer a second time. | The receiver refuses the resent connection at its first handshake frame (transport replay check); the intent is never decrypted, and one transfer remains. |
 | `unapproved` | The agent script asks for a transfer outside the approved operation (other recipient, larger amount). | The tool executes it. | The caller's exact-operation policy refuses before an intent is issued; nothing reaches the receiver. |
 | `forge-result` | The relay changes the tool result on its way back. | The agent accepts the changed result. | The agent refuses the result; the ledger shows the real transfer. |
 
 In the SAGE run the relay cannot read the encrypted, signed exchange. It
 changes or resends bytes at the same point of the connection as in the
 baseline, so the refusal shows up at the transport or signature check, not as
-a policy decision about the new recipient. The report records the refusal
-stage and error code exactly as the host returns them, and a scenario whose
+a policy decision about the new recipient. The host returns the same error
+code for every refusal, so the report does not claim a refusal stage from it.
+It records the error the agent sees, the ledger, and how far the connection
+got (the frames the relay forwarded in each direction). A scenario whose
 outcome differs from the expectation is reported as such, not adjusted.
 
 ## Measurements and report
 
 `demo run` writes one JSON report per run with: the pinned revisions, the
-mode and scenario, the agent-visible outcome, the ledger entries after the
-run, the refusal stage and error code (SAGE), and timings. Latency is measured
+mode and scenario, the agent-visible outcome and error, the ledger entries
+after the run, the frames the relay forwarded in each direction, and timings. Latency is measured
 for the `normal` scenario over repeated calls in both modes. The one-time
 setup cost is reported separately: a new SAGE replay journal enforces a
 360-second quarantine before its first call, so `demo setup` creates state
@@ -111,11 +113,13 @@ is not read as complete protection:
 
 ```
 cmd/demo/            setup, run, compare and the per-role subcommands
-internal/transfer/   the transfer tool, its ledger and the guardbinding factory
+internal/scenario/   scenario names and the fixed transfer values both modes use
+internal/transfer/   the transfer tool and its ledger
 internal/relay/      the TCP relay and its fault modes
 internal/baseline/   unprotected MCP JSON-RPC agent and tool host
-internal/protected/  guardhost caller and receiver assembly, synthetic Source
-                     and accept-all measurement (named as such)
+internal/protected/  guardhost caller and receiver assembly, the guardbinding
+                     factory of the transfer tool, synthetic Source and
+                     accept-all measurement (named as such)
 ```
 
 ```
