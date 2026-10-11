@@ -245,23 +245,36 @@ func TestLockRefusesASecondCommand(t *testing.T) {
 }
 
 // A cancelled agent that ignores the interrupt is killed after the stop
-// timeout.
+// timeout, even when a child of it still holds the stdout pipe.
 func TestExecAgentIsKilledAfterCancel(t *testing.T) {
 	dir := shortDir(t)
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	script := dir + "/agent"
-	if err := os.WriteFile(script, []byte("#!/bin/sh\ntrap '' INT\nsleep 60\n"), 0o700); err != nil {
+	script, trapped := dir+"/agent", dir+"/trapped"
+	// The trailing command keeps the shell from replacing itself with sleep,
+	// so sleep is a child that outlives the killed shell.
+	body := "#!/bin/sh\ntrap '' INT\ntouch " + trapped + "\nsleep 60\ntrue\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	go func() {
+		for range 500 {
+			if _, err := os.Stat(trapped); err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		cancel()
+	}()
 	start := time.Now()
-	if _, err := (Exec{Path: script}).Agent(ctx, AgentConfig{}); err == nil {
-		t.Fatal("a killed agent succeeded")
+	_, err := (Exec{Path: script}).Agent(ctx, AgentConfig{})
+	if err == nil || !strings.Contains(err.Error(), "killed") {
+		t.Fatalf("Agent() = %v", err)
 	}
-	if time.Since(start) > stopTimeout+5*time.Second {
-		t.Fatal("the agent was not killed in time")
+	if elapsed := time.Since(start); elapsed < stopTimeout || elapsed > stopTimeout+5*time.Second {
+		t.Fatalf("the agent was killed after %s", elapsed)
 	}
 }

@@ -155,9 +155,10 @@ func (e Exec) Agent(ctx context.Context, c AgentConfig) (Outcome, error) {
 		return Outcome{}, err
 	}
 	// On cancellation, interrupt the agent and kill it if it does not exit.
+	// Closing stdout also ends the read if a descendant still holds the pipe.
 	stop := context.AfterFunc(ctx, func() {
 		_ = p.cmd.Process.Signal(os.Interrupt)
-		t := time.AfterFunc(stopTimeout, func() { _ = p.cmd.Process.Kill() })
+		t := time.AfterFunc(stopTimeout, func() { _ = p.cmd.Process.Kill(); _ = p.stdout.Close() })
 		go func() { err := <-p.done; t.Stop(); p.done <- err }()
 	})
 	defer stop()
