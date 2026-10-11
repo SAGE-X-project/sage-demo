@@ -27,3 +27,27 @@ jobs:
         run: |
           go test -race -coverprofile="$RUNNER_TEMP/cover.out" ./...
           go tool cover -func="$RUNNER_TEMP/cover.out" | awk '/^total:/ { sub(/%$/, "", $3); found=1; if ($3+0 < 90) exit 1 } END { if (!found) exit 1 }'
+
+  end-to-end:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - name: Run every scenario in both modes as separate processes
+        shell: bash
+        run: |
+          go build -o "$RUNNER_TEMP/demo" ./cmd/demo
+          dir="$(mktemp -d /tmp/sd.XXXXXX)/d"
+          "$RUNNER_TEMP/demo" setup -dir "$dir"
+          for mode in baseline sage; do
+            for scenario in normal tamper-args replay unapproved forge-result; do
+              "$RUNNER_TEMP/demo" run -dir "$dir" -mode "$mode" -scenario "$scenario"
+            done
+            "$RUNNER_TEMP/demo" run -dir "$dir" -mode "$mode" -scenario normal -calls 10
+          done
+          # Each run exits nonzero when it differs from the design.
+          "$RUNNER_TEMP/demo" compare -dir "$dir" | tee "$RUNNER_TEMP/compare.txt"
+          if grep -E "DIFFERS FROM EXPECTATION|not run|setup failed" "$RUNNER_TEMP/compare.txt"; then exit 1; fi

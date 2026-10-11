@@ -119,6 +119,10 @@ func TestRelayAppliesFaultByDirectionAndIndex(t *testing.T) {
 	if !reflect.DeepEqual(got, []string{"OK:ONE", "ok:changed"}) {
 		t.Fatalf("answers = %q", got)
 	}
+	waitRecords(t, r, 1, 2)
+	if got := r.Records()[0].Changed; !reflect.DeepEqual(got, []Change{{Response, 0}, {Request, 1}}) && !reflect.DeepEqual(got, []Change{{Request, 1}, {Response, 0}}) {
+		t.Fatalf("changed = %+v", got)
+	}
 	if got := exchange(t, r.Addr(), "two"); got[0] != "ok:two" {
 		t.Fatalf("second connection answer = %q", got)
 	}
